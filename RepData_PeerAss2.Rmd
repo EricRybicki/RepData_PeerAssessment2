@@ -1,0 +1,143 @@
+Reproducible Research Peer Assessment 2
+=======================================
+
+## Population and economic impact of major weather events in the United States between 1950 and 2011
+
+
+## Synopsis
+
+The aim of this report is to examine the major storm and weather event database collected by the US National Oceanic and Atmospheric Administration (NOAA) between the years of 1950 and 2011 to ascertain which types of weather events cause the greatest population and economic damage to the US. 
+
+For the purpose of population harm, figures for estimated fatalities and injuries were extracted from the database and for the purpose of economic harm, figures for estimated property damage and crop loss were extracted. Both sets were then summed up by event type and then ordered from greatest to least impact. 
+
+The analysis will show that Tornadoes produce by far the most population harm of all weather events in the US, where as the lions share of the economic impact can be attributed to Floods, with Hurricanes, Tornadoes, and Storm Surges contributing heavily.
+
+## Data Processing
+
+We want to first download the data set from [link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2).
+
+Loading the entire database into R to be able to examine the data and determine what sort of analysis is required.
+```{r, cache=TRUE}
+library(R.utils)
+bunzip2("StormData.csv.bz2")
+storm.data <- read.csv("StormData.csv")
+head(storm.data)
+```
+
+A quick look at the data tells us that we have far more variables than we're interested in, that much of the data is missing, and that all the column names are in full caps. These issues will need to be rectified before advancing to the analysis. 
+
+```{r}
+names(storm.data) <- tolower(names(storm.data))
+```
+
+### Cleaning the data
+
+##### Population
+First we will clean the population oriented data by summing all the fatalities and injuries per each event type and combining the results into a single data set. In the resulting data set we add the fatality and injury sums and then remove any events which have neither. 
+
+```{r}
+    event.fat <- aggregate(fatalities ~ evtype, data = storm.data, sum)
+    event.inj <- aggregate(injuries ~ evtype, data = storm.data, sum)
+        event <- merge(event.fat, event.inj, "evtype")
+  event$total <- event$fatalities + event$injuries
+    event.pop <- event[rowSums(event[, -1] > 0) != 0, ]
+```
+
+
+##### Economic
+Next we can clean the economic data, however closer inspection of the storm.data set reveals an untidy form of each of the property and crop damage value whereby a helper column contains an exponent code. For the purposes of this analysis we will address only the figures which range in the millions and billions.
+
+We extract each column of interest and combine into a single data frame, ignoring any observations which don't contain a million/billion exponent code. 
+
+```{r}
+evtype <- storm.data$evtype
+prop.d <- storm.data$propdmg
+prop.x <- storm.data$propdmgexp
+crop.d <- storm.data$cropdmg
+crop.x <- storm.data$cropdmgexp
+
+   dmg <- data.frame(evtype, prop.d, prop.x, crop.d, crop.x)
+   dmg <- subset(dmg, grepl("[MmBb]", dmg$prop.x) | grepl("[MmBb]", dmg$crop.x))
+```
+
+Then we convert the exponent values to numeric.
+
+```{r}
+for (i in 1:nrow(dmg)) {
+    if (grepl("[Mm]", dmg$prop.x[i])) {
+        dmg$prop.d[i] <- 1e+06 * dmg$prop.d[i]
+    }
+    if (grepl("[Bb]", dmg$prop.x[i])) {
+        dmg$prop.d[i] <- 1e+09 * dmg$prop.d[i]
+    }
+    if (grepl("[Mm]", dmg$crop.x[i])) {
+        dmg$crop.d[i] <- 1e+06 * dmg$crop.d[i]
+    }
+    if (grepl("[Bb]", dmg$crop.x[i])) {
+        dmg$crop.d[i] <- 1e+09 * dmg$crop.d[i]
+    }
+}
+```
+
+Finally we can sum and total the property and crop damage.
+
+```{r}
+        prop <- aggregate(prop.d ~ evtype, data = dmg, sum)
+        crop <- aggregate(crop.d ~ evtype, data = dmg, sum)
+      damage <- merge(prop, crop, "evtype")
+damage$total <- damage$crop + damage$prop
+```
+
+### Analysis
+With the data ready we can once again visually examine the data.
+
+##### Population
+The summary of our total shows a broad range of values.
+```{r}
+summary(event.pop)
+```
+
+To view only the events which will have the greatest impact, we subset only the events whose value is greater than the mean and then sort from highest to lowest. This gives us our result in table form. 
+```{r}
+event.high <- event.pop[event.pop$total > mean(event.pop$total), ]
+
+head(event.high[order(event.high$total, decreasing = TRUE), ])
+```
+
+##### Economic
+The summary of our total again shows a broad range of values. 
+```{r}
+summary(damage)
+```
+
+As with the population data, we subset the greater-than-mean values and sort in decreasing order. 
+```{r}
+damage.high <- damage[damage$total > mean(damage$total), ]
+
+head(damage.high[order(damage.high$total, decreasing = TRUE), ])
+```
+
+
+## Results
+
+Finally we use the previously generated tables to construct a bar plot showcasing the weather events most harmful to human population.
+```{r}
+library(ggplot2)
+ggplot(event.high, aes(x=reorder(evtype, total), y=total, fill = evtype)) + 
+    theme_bw() + geom_bar(stat="identity") + coord_flip() + 
+    ggtitle("Population harm caused by weather effects") +
+    theme(axis.title.y = element_blank(), legend.position = "none") +
+    ylab("Sum of fatalities and injuries")
+```
+
+And the weather events with the greatest economic consequences. 
+
+```{r}
+ggplot(damage.high, aes(x=reorder(evtype, total), y=total, fill = evtype)) + 
+    theme_bw() + geom_bar(stat="identity") + coord_flip() +
+    theme(axis.title.y = element_blank(), legend.position = "none") +
+    ggtitle("Economic consequenses of weather effects") +
+    ylab("Sum of property and crop damage ($)")
+```
+
+
